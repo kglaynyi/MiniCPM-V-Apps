@@ -75,7 +75,7 @@ jobs:
         run: |
           set -euo pipefail
           umask 077
-          mkdir -p "$RUNNER_TEMP/voxcpm-signing"
+          mkdir -p "$RUNNER_TEMP/voxcpm-signing" "$HOME/.gradle"
           printf '%s' "$KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/voxcpm-signing/release.jks"
           test -s "$RUNNER_TEMP/voxcpm-signing/release.jks"
           {
