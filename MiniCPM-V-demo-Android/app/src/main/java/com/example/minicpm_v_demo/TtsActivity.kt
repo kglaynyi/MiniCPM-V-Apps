@@ -4,12 +4,15 @@ import android.content.Intent
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
+import android.media.PlaybackParams
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.view.View
 import android.widget.ImageButton
+import android.widget.LinearLayout
+import android.widget.Button
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
@@ -72,6 +75,13 @@ class TtsActivity : AppCompatActivity() {
     private var playbackHandler = Handler(Looper.getMainLooper())
     private var playbackRunnable: Runnable? = null
     private var generatedDurationMs = 0
+    // M-Print: Preview speed does not alter the saved WAV.
+    private var playbackSpeed = 0.80f
+    private lateinit var sliderSpeed: Slider
+    private lateinit var tvSpeed: TextView
+    private lateinit var btnExportWav: MaterialButton
+    private lateinit var btnShareWav: MaterialButton
+    private lateinit var historyList: LinearLayout
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -92,6 +102,8 @@ class TtsActivity : AppCompatActivity() {
 
         initViews()
         setupListeners()
+        migrateOldCacheWavs()
+        refreshHistory()
         initEngine()
     }
 
@@ -115,6 +127,13 @@ class TtsActivity : AppCompatActivity() {
         btnPlayPause = findViewById(R.id.btn_play_pause)
         tvPlayTime = findViewById(R.id.tv_play_time)
         sliderPlayback = findViewById(R.id.slider_playback)
+        sliderSpeed = findViewById(R.id.slider_tts_speed)
+        tvSpeed = findViewById(R.id.tv_tts_speed)
+        btnExportWav = findViewById(R.id.btn_export_wav)
+        btnShareWav = findViewById(R.id.btn_share_wav)
+        historyList = findViewById(R.id.tts_history_list)
+        btnExportWav.isEnabled = false
+        btnShareWav.isEnabled = false
 
         findViewById<ImageButton>(R.id.btn_model_manager).setOnClickListener {
             startActivity(Intent(this, ModelManagerActivity::class.java))
@@ -167,6 +186,19 @@ class TtsActivity : AppCompatActivity() {
         btnPlayPause.setOnClickListener {
             if (isPlaying) pausePlayback() else resumeOrStartPlayback()
         }
+
+        sliderSpeed.addOnChangeListener { _, speed, _ ->
+            playbackSpeed = speed
+            tvSpeed.text = String.format(java.util.Locale.US, "%.2fx (preview only)", speed)
+            try {
+                if (isPlaying) audioTrack?.playbackParams = PlaybackParams()
+                    .setSpeed(speed).setPitch(1f)
+            } catch (e: Exception) {
+                Log.w(TAG, "Changing playback speed unsupported", e)
+            }
+        }
+        btnExportWav.setOnClickListener { currentWav()?.let { saveWav(it) } }
+        btnShareWav.setOnClickListener { currentWav()?.let { shareWav(it) } }
 
         sliderPlayback.addOnChangeListener { _, value, _ ->
             if (generatedDurationMs > 0) {
@@ -403,7 +435,8 @@ class TtsActivity : AppCompatActivity() {
             return
         }
 
-        val outputDir = File(cacheDir, "tts_output")
+        // Persistent app-private history; exported WAVs go to Downloads/MPrint.
+        val outputDir = File(filesDir, "tts_output")
         outputDir.mkdirs()
         val outputFile = File(outputDir, "tts_${System.currentTimeMillis()}.wav")
         generatedWavPath = outputFile.absolutePath
@@ -446,6 +479,9 @@ class TtsActivity : AppCompatActivity() {
         if (ok && outputFile.exists() && outputFile.length() > 0) {
             tvStatus.visibility = View.GONE
             cardPlayback.visibility = View.VISIBLE
+            btnExportWav.isEnabled = true
+            btnShareWav.isEnabled = true
+            refreshHistory()
             generatedDurationMs = getWavDurationMs(outputFile)
             sliderPlayback.value = 0f
             tvPlayTime.text = String.format("0:00 / %d:%02d",
@@ -562,6 +598,12 @@ class TtsActivity : AppCompatActivity() {
                 }
 
                 audioTrack?.play()
+                try {
+                    audioTrack?.playbackParams = PlaybackParams()
+                        .setSpeed(playbackSpeed).setPitch(1f)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Playback speed unsupported", e)
+                }
 
                 // Write data in chunks (MODE_STREAM)
                 val chunk = ByteArray(playBufferSize)
@@ -574,13 +616,14 @@ class TtsActivity : AppCompatActivity() {
                     // Update progress every ~200ms
                     if (totalWritten % (playBufferSize * 2) == 0 || totalWritten >= dataSize) {
                         val elapsedMs = (System.currentTimeMillis() - startMs).toInt()
+                        val audioElapsedMs = (elapsedMs * playbackSpeed).toInt()
                         val progress = if (durationMs > 0)
-                            (elapsedMs.toFloat() / durationMs * 100f).coerceAtMost(100f)
+                            (audioElapsedMs.toFloat() / durationMs * 100f).coerceAtMost(100f)
                         else 0f
                         withContext(Dispatchers.Main) {
                             sliderPlayback.value = progress
-                            val emin = elapsedMs / 60000
-                            val esec = (elapsedMs % 60000) / 1000
+                            val emin = audioElapsedMs / 60000
+                            val esec = (audioElapsedMs % 60000) / 1000
                             val dmin = durationMs / 60000
                             val dsec = (durationMs % 60000) / 1000
                             tvPlayTime.text = String.format("%d:%02d / %d:%02d", emin, esec, dmin, dsec)
@@ -593,7 +636,7 @@ class TtsActivity : AppCompatActivity() {
                 val totalDuration = durationMs.toLong()
                 playbackHandler.postDelayed({
                     stopPlayback()
-                }, maxOf(totalDuration, 500))
+                }, maxOf((totalDuration / playbackSpeed.coerceAtLeast(0.6f)).toLong() + 500L, 500L))
             } catch (e: Exception) {
                 Log.e(TAG, "playWavFile failed", e)
                 withContext(Dispatchers.Main) {
@@ -652,6 +695,103 @@ class TtsActivity : AppCompatActivity() {
             else ((dataSize * 1000) / (sampleRate * numChannels * 2)).toInt()
         } catch (e: Exception) {
             0
+        }
+    }
+
+    private fun currentWav(): File? = generatedWavPath?.let { File(it) }
+        ?.takeIf { it.isFile && it.length() > 44 }
+
+    private fun saveWav(file: File) {
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                TtsFileActions.exportWav(this@TtsActivity, file)
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@TtsActivity, "Saved to Downloads/MPrint", Toast.LENGTH_LONG).show()
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@TtsActivity, "WAV export failed: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    private fun shareWav(file: File) {
+        try {
+            TtsFileActions.shareWav(this, file)
+        } catch (e: Exception) {
+            Toast.makeText(this, "Share failed: ${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun migrateOldCacheWavs() {
+        val old = File(cacheDir, "tts_output")
+        val dest = File(filesDir, "tts_output")
+        dest.mkdirs()
+        old.listFiles()?.filter { it.isFile && it.extension.equals("wav", true) && it.length() > 44 }
+            ?.forEach { source ->
+                val target = File(dest, source.name)
+                if (!target.exists()) {
+                    try { source.copyTo(target, overwrite = false) }
+                    catch (e: Exception) { Log.w(TAG, "Cache WAV migration skipped", e) }
+                }
+            }
+    }
+
+    private fun refreshHistory() {
+        historyList.removeAllViews()
+        val dir = File(filesDir, "tts_output")
+        val clips = dir.listFiles()?.filter {
+            it.isFile && it.extension.equals("wav", true) && it.length() > 44
+        }?.sortedByDescending { it.lastModified() }?.take(30).orEmpty()
+        if (clips.isEmpty()) {
+            historyList.addView(TextView(this).apply { text = "No saved recordings yet" })
+            return
+        }
+        clips.forEach { wav ->
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(0, 8, 0, 12)
+            }
+            row.addView(TextView(this).apply {
+                val date = java.text.DateFormat.getDateTimeInstance().format(java.util.Date(wav.lastModified()))
+                text = "$date · ${wav.length() / 1024} KB"
+            })
+            val buttons = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            fun add(label: String, action: () -> Unit) {
+                val button = Button(this).apply { text = label; setOnClickListener { action() } }
+                buttons.addView(button, LinearLayout.LayoutParams(
+                    0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            }
+            add("Play") {
+                generatedWavPath = wav.absolutePath
+                cardPlayback.visibility = View.VISIBLE
+                btnExportWav.isEnabled = true
+                btnShareWav.isEnabled = true
+                generatedDurationMs = getWavDurationMs(wav)
+                playWavFile(wav.absolutePath)
+            }
+            add("Save") { saveWav(wav) }
+            add("Share") { shareWav(wav) }
+            add("Delete") {
+                AlertDialog.Builder(this)
+                    .setTitle("Delete recording?")
+                    .setMessage("Only this locally saved WAV will be deleted.")
+                    .setNegativeButton("Cancel", null)
+                    .setPositiveButton("Delete") { _, _ ->
+                        if (generatedWavPath == wav.absolutePath) {
+                            stopPlayback()
+                            generatedWavPath = null
+                            cardPlayback.visibility = View.GONE
+                            btnExportWav.isEnabled = false
+                            btnShareWav.isEnabled = false
+                        }
+                        wav.delete()
+                        refreshHistory()
+                    }.show()
+            }
+            row.addView(buttons)
+            historyList.addView(row)
         }
     }
 

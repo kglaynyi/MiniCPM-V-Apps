@@ -1,0 +1,48 @@
+name: M-Print VoxCPM2 Android Debug APK
+on:
+  push:
+    branches:
+      - feature/voxcpm2-export-history-speed
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout source and native submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          lfs: true
+      - name: Install Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Android SDK
+        uses: android-actions/setup-android@v3
+      - name: Install SDK/NDK/CMake
+        run: |
+          yes | sdkmanager --licenses || true
+          sdkmanager "platforms;android-36" "platforms;android-36.1" "build-tools;36.0.0" "ndk;27.0.12077973" "cmake;4.1.2"
+      - name: Confirm isolated package and TTS export
+        run: |
+          grep -q 'com.kglaynyi.mprint.voxcpm' MiniCPM-V-demo-Android/app/build.gradle.kts
+          grep -q 'btn_export_wav' MiniCPM-V-demo-Android/app/src/main/res/layout/activity_tts.xml
+          git diff --check
+      - name: Compile Debug APK
+        working-directory: MiniCPM-V-demo-Android
+        run: |
+          chmod +x ./gradlew
+          ./gradlew --no-daemon :app:assembleDebug
+      - name: Publish APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mprint-voxcpm2-android-debug
+          path: MiniCPM-V-demo-Android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14
