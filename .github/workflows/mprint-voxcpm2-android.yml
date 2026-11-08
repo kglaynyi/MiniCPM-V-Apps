@@ -23,12 +23,19 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
-      - name: Android SDK
-        uses: android-actions/setup-android@v3
-      - name: Install SDK/NDK/CMake
+      - name: Install SDK/NDK/CMake via preinstalled sdkmanager
+        shell: bash
         run: |
-          yes | sdkmanager --licenses || true
-          sdkmanager "platforms;android-36" "platforms;android-36.1" "build-tools;36.0.0" "ndk;27.0.12077973" "cmake;4.1.2"
+          set -euo pipefail
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --version
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            "platforms;android-36" \
+            "platforms;android-36.1" \
+            "build-tools;36.0.0" \
+            "ndk;27.0.12077973" \
+            "cmake;4.1.2"
       - name: Confirm isolated package and TTS export
         run: |
           grep -q 'com.kglaynyi.mprint.voxcpm' MiniCPM-V-demo-Android/app/build.gradle.kts
