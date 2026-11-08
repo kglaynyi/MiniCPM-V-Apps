@@ -162,7 +162,7 @@ tasks.register("buildGgmlCpu_v86") {
             "-DLLAMA_BUILD_COMMON=ON",
             "-DLLAMA_OPENSSL=OFF",
             "-DLLAMA_CURL=OFF",
-            "-DLLAMA_BUILD_TOOLS=ON",
+            "-DLLAMA_BUILD_TOOLS=OFF",
             "-DGGML_NATIVE=OFF",
             "-DGGML_LLAMAFILE=ON",
             "-DGGML_CPU_ARM_ARCH=armv8.6-a+dotprod+i8mm+fp16+bf16",
