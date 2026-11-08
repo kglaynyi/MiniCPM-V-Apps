@@ -167,10 +167,13 @@ class TtsActivity : AppCompatActivity() {
         }
 
         btnClearRef.setOnClickListener {
-            referenceWavFile?.delete()
+            deleteTemporaryReference()
             referenceWavFile = null
             updateRefAudioUI()
         }
+
+        findViewById<MaterialButton>(R.id.btn_save_voice_preset).setOnClickListener { saveVoicePreset() }
+        findViewById<MaterialButton>(R.id.btn_load_voice_preset).setOnClickListener { chooseVoicePreset() }
 
         btnPresetFemale.setOnClickListener { selectPresetRefAudio("默认女声.wav") }
         btnPresetMale.setOnClickListener { selectPresetRefAudio("默认男声.wav") }
@@ -426,6 +429,84 @@ class TtsActivity : AppCompatActivity() {
                 }
             }
         }
+    }
+
+    private fun voicePresetDir(): File =
+        File(filesDir, "voice_presets").apply { mkdirs() }
+
+    private fun deleteTemporaryReference() {
+        val file = referenceWavFile ?: return
+        // Never delete a saved preset when switching or clearing references.
+        if (file.parentFile?.canonicalFile == cacheDir.canonicalFile) file.delete()
+    }
+
+    private fun saveVoicePreset() {
+        val source = referenceWavFile
+        if (source == null || !source.isFile || source.length() == 0L) {
+            Toast.makeText(this, "Record or choose a voice first", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val nameInput = android.widget.EditText(this).apply {
+            hint = "Voice name"
+            setSingleLine(true)
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Save voice preset")
+            .setView(nameInput)
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Save") { _, _ ->
+                val name = nameInput.text.toString().trim()
+                if (name.isBlank() || name.length > 50) {
+                    Toast.makeText(this, "Enter a name (1–50 characters)", Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+                val id = java.util.UUID.randomUUID().toString()
+                val dest = File(voicePresetDir(), "$" + "{id}.wav")
+                try {
+                    source.copyTo(dest)
+                    val meta = org.json.JSONObject()
+                        .put("name", name)
+                        .put("cfg", sliderCfg.value.toDouble())
+                        .put("steps", sliderTimesteps.value.toInt())
+                    File(voicePresetDir(), "$" + "{id}.json").writeText(meta.toString())
+                    Toast.makeText(this, "Voice preset saved", Toast.LENGTH_SHORT).show()
+                } catch (e: Exception) {
+                    dest.delete()
+                    Toast.makeText(this, "Save failed: $" + "{e.message}", Toast.LENGTH_LONG).show()
+                }
+            }.show()
+    }
+
+    private fun chooseVoicePreset() {
+        val files = voicePresetDir().listFiles { f -> f.extension == "json" }
+            ?.sortedBy { it.name } ?: emptyList()
+        val entries = files.mapNotNull { meta ->
+            try {
+                val wav = File(voicePresetDir(), meta.nameWithoutExtension + ".wav")
+                if (wav.isFile) Triple(meta, wav, org.json.JSONObject(meta.readText()))
+                else null
+            } catch (_: Exception) { null }
+        }
+        if (entries.isEmpty()) {
+            Toast.makeText(this, "No saved voices yet", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val labels = entries.map { it.third.optString("name", "Voice") }.toTypedArray()
+        AlertDialog.Builder(this).setTitle("My saved voices")
+            .setItems(labels) { _, index ->
+                val (_, wav, metadata) = entries[index]
+                deleteTemporaryReference()
+                referenceWavFile = wav
+                sliderCfg.value = metadata.optDouble("cfg", 2.0).toFloat()
+                    .coerceIn(sliderCfg.valueFrom, sliderCfg.valueTo)
+                sliderTimesteps.value = metadata.optInt("steps", 5).toFloat()
+                    .coerceIn(sliderTimesteps.valueFrom, sliderTimesteps.valueTo)
+                updateRefAudioUI()
+                tvRefInfo.visibility = View.VISIBLE
+                tvRefInfo.text = "Selected: $" + "{labels[index]}"
+                btnPresetFemale.isChecked = false
+                btnPresetMale.isChecked = false
+            }.setNegativeButton("Cancel", null).show()
     }
 
     private fun doGenerate() {
