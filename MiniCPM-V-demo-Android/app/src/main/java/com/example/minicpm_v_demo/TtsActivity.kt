@@ -447,7 +447,30 @@ class TtsActivity : AppCompatActivity() {
 
         generationJob = lifecycleScope.launch(Dispatchers.Default) {
             try {
-                val ok = engine.generate(text, cfg, steps, refPath, outputFile.absolutePath)
+                val chunks = TtsLongText.split(text)
+                val partDir = File(outputDir, outputFile.nameWithoutExtension + "_parts").apply { mkdirs() }
+                val parts = mutableListOf<File>()
+                var ok = true
+                for ((index, chunk) in chunks.withIndex()) {
+                    // Persist completed chunks: failed/cancelled runs do not lose their audio.
+                    val part = File(partDir, "part_%04d.wav".format(index + 1))
+                    withContext(Dispatchers.Main) {
+                        tvStatus.visibility = View.VISIBLE
+                        tvStatus.text = "Generating part ${index + 1} / ${chunks.size}"
+                    }
+                    if (!engine.generate(chunk, cfg, steps, refPath, part.absolutePath)) {
+                        ok = false
+                        break
+                    }
+                    parts.add(part)
+                }
+                if (ok && parts.isNotEmpty()) {
+                    if (parts.size == 1) {
+                        parts[0].copyTo(outputFile, overwrite = true)
+                    } else {
+                        TtsLongText.joinWavs(parts, outputFile)
+                    }
+                }
                 withContext(Dispatchers.Main) {
                     onGenerationComplete(ok, outputFile)
                 }
