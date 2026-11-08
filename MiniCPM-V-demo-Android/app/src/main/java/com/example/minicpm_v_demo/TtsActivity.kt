@@ -461,18 +461,18 @@ class TtsActivity : AppCompatActivity() {
                     return@setPositiveButton
                 }
                 val id = java.util.UUID.randomUUID().toString()
-                val dest = File(voicePresetDir(), "$" + "{id}.wav")
+                val dest = File(voicePresetDir(), id + ".wav")
                 try {
                     source.copyTo(dest)
                     val meta = org.json.JSONObject()
                         .put("name", name)
                         .put("cfg", sliderCfg.value.toDouble())
                         .put("steps", sliderTimesteps.value.toInt())
-                    File(voicePresetDir(), "$" + "{id}.json").writeText(meta.toString())
+                    File(voicePresetDir(), id + ".json").writeText(meta.toString())
                     Toast.makeText(this, "Voice preset saved", Toast.LENGTH_SHORT).show()
                 } catch (e: Exception) {
                     dest.delete()
-                    Toast.makeText(this, "Save failed: $" + "{e.message}", Toast.LENGTH_LONG).show()
+                    Toast.makeText(this, "Save failed: " + e.message, Toast.LENGTH_LONG).show()
                 }
             }.show()
     }
@@ -503,7 +503,7 @@ class TtsActivity : AppCompatActivity() {
                     .coerceIn(sliderTimesteps.valueFrom, sliderTimesteps.valueTo)
                 updateRefAudioUI()
                 tvRefInfo.visibility = View.VISIBLE
-                tvRefInfo.text = "Selected: $" + "{labels[index]}"
+                tvRefInfo.text = "Selected: " + labels[index]
                 btnPresetFemale.isChecked = false
                 btnPresetMale.isChecked = false
             }.setNegativeButton("Cancel", null).show()
