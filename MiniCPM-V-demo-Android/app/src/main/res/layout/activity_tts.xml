@@ -83,8 +83,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:hint="@string/tts_text_hint"
-                        app:counterEnabled="true"
-                        app:counterMaxLength="500"
+                        app:counterEnabled="false"
                         style="@style/Widget.Material3.TextInputLayout.OutlinedBox">
 
                         <com.google.android.material.textfield.TextInputEditText
@@ -202,6 +201,17 @@
                             android:layout_weight="1"
                             android:text="@string/tts_preset_male" />
                     </LinearLayout>
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btn_save_voice_preset"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Save current voice as preset" />
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btn_load_voice_preset"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="My saved voices" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
@@ -381,6 +391,70 @@
                             android:valueTo="100"
                             android:value="0" />
                     </LinearLayout>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="12dp"
+                app:cardElevation="2dp">
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Playback speed (preview only)"
+                        android:textAppearance="?attr/textAppearanceTitleSmall" />
+                    <TextView
+                        android:id="@+id/tv_tts_speed"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="0.80x (preview only)" />
+                    <com.google.android.material.slider.Slider
+                        android:id="@+id/slider_tts_speed"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:valueFrom="0.60"
+                        android:valueTo="1.20"
+                        android:stepSize="0.05"
+                        android:value="0.80" />
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btn_export_wav"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Save WAV to Downloads" />
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btn_share_wav"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Share WAV" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="24dp"
+                app:cardElevation="2dp">
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="12dp">
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Generated Audio History (last 30)"
+                        android:textAppearance="?attr/textAppearanceTitleSmall" />
+                    <LinearLayout
+                        android:id="@+id/tts_history_list"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
