@@ -201,6 +201,17 @@
                             android:layout_weight="1"
                             android:text="@string/tts_preset_male" />
                     </LinearLayout>
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btn_save_voice_preset"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Save current voice as preset" />
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btn_load_voice_preset"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="My saved voices" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
