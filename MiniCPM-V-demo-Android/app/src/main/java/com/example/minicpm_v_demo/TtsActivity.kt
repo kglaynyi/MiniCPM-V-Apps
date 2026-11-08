@@ -65,6 +65,7 @@ class TtsActivity : AppCompatActivity() {
     private lateinit var recorder: AudioRecorder
     private var referenceWavFile: File? = null
     private var isGenerating = false
+    private var isBatchGenerating = false
     private var generationJob: Job? = null
     private var createdWithLocale: String? = null
 
@@ -179,11 +180,7 @@ class TtsActivity : AppCompatActivity() {
         btnPresetMale.setOnClickListener { selectPresetRefAudio("默认男声.wav") }
 
         btnGenerate.setOnClickListener {
-            if (isGenerating) {
-                cancelGeneration()
-            } else {
-                doGenerate()
-            }
+            if (!isBatchGenerating && !isGenerating) doGenerate()
         }
 
         btnPlayPause.setOnClickListener {
@@ -309,6 +306,7 @@ class TtsActivity : AppCompatActivity() {
                         tvStatus.setText(R.string.tts_loading_model)
                     }
                     is TtsState.Ready -> {
+                        if (isBatchGenerating) return@collect
                         isGenerating = false
                         btnGenerate.isEnabled = true
                         btnGenerate.setText(R.string.tts_generate)
@@ -317,7 +315,7 @@ class TtsActivity : AppCompatActivity() {
                     }
                     is TtsState.Generating -> {
                         isGenerating = true
-                        btnGenerate.isEnabled = true
+                        btnGenerate.isEnabled = false
                         btnGenerate.setText(R.string.tts_cancel)
                         progressGenerate.visibility = View.VISIBLE
                         tvStatus.visibility = View.VISIBLE
@@ -526,6 +524,8 @@ class TtsActivity : AppCompatActivity() {
         val steps = sliderTimesteps.value.toInt()
         val refPath = referenceWavFile?.absolutePath
 
+        isBatchGenerating = true
+        btnGenerate.isEnabled = false
         generationJob = lifecycleScope.launch(Dispatchers.Default) {
             try {
                 val chunks = TtsLongText.split(text)
@@ -558,6 +558,8 @@ class TtsActivity : AppCompatActivity() {
             } catch (e: kotlinx.coroutines.CancellationException) {
                 // User cancelled; engine state will be reset by cancelGeneration
                 withContext(Dispatchers.Main) {
+                    isBatchGenerating = false
+                    btnGenerate.isEnabled = true
                     progressGenerate.visibility = View.GONE
                     tvStatus.setText(R.string.tts_cancelled)
                 }
@@ -577,7 +579,9 @@ class TtsActivity : AppCompatActivity() {
 
     private fun onGenerationComplete(ok: Boolean, outputFile: File) {
         generationJob = null
+        isBatchGenerating = false
         isGenerating = false
+        btnGenerate.isEnabled = true
         btnGenerate.setText(R.string.tts_generate)
         progressGenerate.visibility = View.GONE
         if (ok && outputFile.exists() && outputFile.length() > 0) {
