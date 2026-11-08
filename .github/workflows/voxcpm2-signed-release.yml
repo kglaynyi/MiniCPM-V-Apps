@@ -1,0 +1,105 @@
+name: VoxCPM2 Persistent Signed Release APK
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  signed-release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Check signing secrets (fail closed)
+        env:
+          KEYSTORE_B64: ${{ secrets.VOXCPM_KEYSTORE_BASE64 }}
+          STORE_PASS: ${{ secrets.VOXCPM_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.VOXCPM_KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.VOXCPM_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          test -n "$KEYSTORE_B64" || { echo "::error::Missing VOXCPM_KEYSTORE_BASE64"; exit 1; }
+          test -n "$STORE_PASS" || { echo "::error::Missing VOXCPM_STORE_PASSWORD"; exit 1; }
+          test -n "$KEY_ALIAS" || { echo "::error::Missing VOXCPM_KEY_ALIAS"; exit 1; }
+          test -n "$KEY_PASS" || { echo "::error::Missing VOXCPM_KEY_PASSWORD"; exit 1; }
+      - name: Checkout native sources
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          lfs: true
+      - name: Install Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Install Android toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "platforms;android-36.1" "build-tools;36.0.0" "ndk;27.0.12077973" "cmake;4.1.2"
+      - name: Fix Apple-only F_NOCACHE in pinned submodule
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('llama.cpp-omni/src/llama-moe-slot.cpp')
+          src = path.read_text()
+          old1 = "    void apply_experts_nocache(bool on) {\n#ifndef _WIN32"
+          new1 = "    void apply_experts_nocache(bool on) {\n#if defined(__APPLE__) && defined(F_NOCACHE)"
+          old2 = """        const int fd = open(path.c_str(), O_RDONLY | O_CLOEXEC);
+          if (experts_nocache_desired() && fcntl(fd, F_NOCACHE, 1) != 0) {
+              moe_log("F_NOCACHE 设置失败: %s", std::strerror(errno));
+          }
+          """
+          new2 = old2.replace("        if (experts_nocache_desired()", "#if defined(__APPLE__) && defined(F_NOCACHE)\n        if (experts_nocache_desired()") + "#endif\n"
+          if src.count(old1) != 1 or src.count(old2) != 1:
+              raise RuntimeError("Pinned submodule changed: refusing unsafe patch")
+          path.write_text(src.replace(old1, new1, 1).replace(old2, new2, 1))
+          PY
+      - name: Restore persistent signing key
+        shell: bash
+        env:
+          KEYSTORE_B64: ${{ secrets.VOXCPM_KEYSTORE_BASE64 }}
+          STORE_PASS: ${{ secrets.VOXCPM_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.VOXCPM_KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.VOXCPM_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p "$RUNNER_TEMP/voxcpm-signing"
+          printf '%s' "$KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/voxcpm-signing/release.jks"
+          test -s "$RUNNER_TEMP/voxcpm-signing/release.jks"
+          {
+            printf 'MINICPMV_KEYSTORE=%s\n' "$RUNNER_TEMP/voxcpm-signing/release.jks"
+            printf 'MINICPMV_KEYSTORE_PASSWORD=%s\n' "$STORE_PASS"
+            printf 'MINICPMV_KEY_ALIAS=%s\n' "$KEY_ALIAS"
+            printf 'MINICPMV_KEY_PASSWORD=%s\n' "$KEY_PASS"
+          } > "$HOME/.gradle/gradle.properties"
+      - name: Build signed release APK
+        working-directory: MiniCPM-V-demo-Android
+        run: |
+          set -euo pipefail
+          chmod +x ./gradlew
+          ./gradlew --no-daemon :app:assembleRelease
+      - name: Verify signed release certificate
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=$(find MiniCPM-V-demo-Android/app/build/outputs/apk/release -name '*.apk' -type f | head -1)
+          test -n "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$APK"
+          sha256sum "$APK"
+      - name: Publish signed APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: voxcpm2-signed-release
+          path: MiniCPM-V-demo-Android/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+          retention-days: 30
+      - name: Remove temporary signing material
+        if: always()
+        shell: bash
+        run: |
+          rm -rf "$RUNNER_TEMP/voxcpm-signing"
+          rm -f "$HOME/.gradle/gradle.properties"
